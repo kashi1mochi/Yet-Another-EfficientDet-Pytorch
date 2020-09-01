@@ -45,6 +45,7 @@ def get_args():
                                                                    'suggest using \'admaw\' until the'
                                                                    ' very final stage then switch to \'sgd\'')
     parser.add_argument('--num_epochs', type=int, default=500)
+    parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--val_interval', type=int, default=1, help='Number of epoches between valing phases')
     parser.add_argument('--save_interval', type=int, default=500, help='Number of steps between saving')
     parser.add_argument('--es_min_delta', type=float, default=0.0,
@@ -65,9 +66,9 @@ def get_args():
 
 
 class ModelWithLoss(nn.Module):
-    def __init__(self, model, debug=False):
+    def __init__(self, model, gpu_id, debug=False):
         super().__init__()
-        self.criterion = FocalLoss()
+        self.criterion = FocalLoss(gpu_id)
         self.model = model
         self.debug = debug
 
@@ -176,10 +177,10 @@ def train(opt):
     writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
 
     # warp the model with loss function, to reduce the memory usage on gpu0 and speedup
-    model = ModelWithLoss(model, debug=opt.debug)
+    model = ModelWithLoss(model, opt.gpu_id, debug=opt.debug)
 
     if params.num_gpus > 0:
-        model = model.cuda()
+        model = model.cuda(opt.gpu_id)
         if params.num_gpus > 1:
             model = CustomDataParallel(model, params.num_gpus)
             if use_sync_bn:
@@ -219,8 +220,8 @@ def train(opt):
                     if params.num_gpus == 1:
                         # if only one gpu, just send it to cuda:0
                         # elif multiple gpus, send it to multiple gpus in CustomDataParallel, not here
-                        imgs = imgs.cuda()
-                        annot = annot.cuda()
+                        imgs = imgs.cuda(opt.gpu_id)
+                        annot = annot.cuda(opt.gpu_id)
 
                     optimizer.zero_grad()
                     cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
@@ -271,8 +272,8 @@ def train(opt):
                         annot = data['annot']
 
                         if params.num_gpus == 1:
-                            imgs = imgs.cuda()
-                            annot = annot.cuda()
+                            imgs = imgs.cuda(opt.gpu_id)
+                            annot = annot.cuda(opt.gpu_id)
 
                         cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
                         cls_loss = cls_loss.mean()
